@@ -175,7 +175,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         # Extract product information
         product_info = extract_product_info(message_text)
         
-        # Send product details
+        # Prepare product details text
         sizes_text = ", ".join(product_info['sizes']) if product_info['sizes'] else "No sizes available"
         details_text = (
             f"*{product_info['name']}*\n\n"
@@ -183,22 +183,52 @@ def handle_message(update: Update, context: CallbackContext) -> None:
             f"*Available Sizes:* {sizes_text}"
         )
         
-        update.message.reply_text(details_text, parse_mode=ParseMode.MARKDOWN)
+        # Import necessary classes
+        from telegram import InputMediaPhoto
         
-        # Send product images
+        # Send product images as a media group with caption
         if product_info['image_urls']:
-            update.message.reply_text(f"Sending {len(product_info['image_urls'])} product images...")
-            
+            # Download all images first
+            media_group = []
             for i, image_url in enumerate(product_info['image_urls']):
                 image_data = download_image(image_url)
                 if image_data:
-                    update.message.reply_photo(
-                        photo=image_data,
-                        caption=f"Image {i+1}/{len(product_info['image_urls'])}"
+                    # Add caption to the first image only
+                    caption = details_text if i == 0 else ""
+                    parse_mode = ParseMode.MARKDOWN if i == 0 else None
+                    
+                    # Create InputMediaPhoto object
+                    media_photo = InputMediaPhoto(
+                        media=image_data,
+                        caption=caption,
+                        parse_mode=parse_mode
                     )
+                    media_group.append(media_photo)
             
-            update.message.reply_text("All product information has been sent!")
+            if media_group:
+                # Send media group (up to 10 images per group as per Telegram's limit)
+                if len(media_group) <= 10:
+                    context.bot.send_media_group(
+                        chat_id=update.effective_chat.id,
+                        media=media_group
+                    )
+                else:
+                    # If more than 10 images, send in batches
+                    for i in range(0, len(media_group), 10):
+                        batch = media_group[i:i+10]
+                        context.bot.send_media_group(
+                            chat_id=update.effective_chat.id,
+                            media=batch
+                        )
+                
+                update.message.reply_text("All product information has been sent!")
+            else:
+                # If no images were successfully downloaded
+                update.message.reply_text(details_text, parse_mode=ParseMode.MARKDOWN)
+                update.message.reply_text("Failed to download product images.")
         else:
+            # If no image URLs were found
+            update.message.reply_text(details_text, parse_mode=ParseMode.MARKDOWN)
             update.message.reply_text("No product images found.")
         
         # Delete the processing message
